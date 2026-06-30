@@ -32,8 +32,11 @@
   .running { background: #1f6f3f; color: #d3ffe2; }
   .stopped { background: #4d4f54; color: #e6edf3; }
   .exited  { background: #6e2b2b; color: #ffd7d3; }
-  .nid { font-size: 12px; color: #8b949e; word-break: break-all; max-width: 320px; }
+  .nid { font-size: 12px; color: #8b949e; word-break: break-all; max-width: 360px; }
   .nid b { color: #79c0ff; }
+  .weblink { display: inline-block; margin-top: 6px; color: #58ff8c;
+             text-decoration: none; word-break: break-all; }
+  .weblink:hover { text-decoration: underline; }
   .logs { white-space: pre-wrap; font-size: 12px; color: #8b949e; max-width: 460px;
           max-height: 120px; overflow: auto; background: #0d1117; padding: 6px 8px;
           border-radius: 6px; margin-top: 6px; }
@@ -125,13 +128,26 @@ function copyNid(nid) {
   const flag = c && c !== "auto" ? "--color " + c + " " : "";
   navigator.clipboard.writeText("viroh-receiver " + flag + nid);
 }
+function watchUrl(nid) {
+  return location.origin + "/sources/" + nid;
+}
+function copyLink(nid) {
+  navigator.clipboard.writeText(watchUrl(nid));
+}
 
 function render(agents) {
   $("count").textContent = agents.length + " agent" + (agents.length === 1 ? "" : "s");
   $("empty").style.display = agents.length ? "none" : "block";
   $("rows").innerHTML = agents.map(a => {
     const nid = a.node_id
-      ? `<div class="nid"><b>${a.node_id}</b> <button onclick="copyNid('${a.node_id}')">copy cmd</button> <a href="/sources/${a.node_id}" target="_blank"><button>watch ▶</button></a></div>`
+      ? `<div class="nid"><b>${a.node_id}</b>
+           <div class="row" style="margin-top:6px">
+             <a href="/sources/${a.node_id}" target="_blank"><button>watch ▶</button></a>
+             <button onclick="copyLink('${a.node_id}')">copy link</button>
+             <button onclick="copyNid('${a.node_id}')">copy cmd</button>
+           </div>
+           <a class="weblink" href="/sources/${a.node_id}" target="_blank" title="${watchUrl(a.node_id)}">${watchUrl(a.node_id)}</a>
+         </div>`
       : `<span class="muted">resolving…</span>`;
     const logs = (a.log_tail || []).join("\n").replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
     const buttons = (a.status === "running"
