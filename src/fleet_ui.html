@@ -62,7 +62,7 @@
     <div class="row">
       <label>name</label><input id="name" value="agent-1" />
       <label>fps</label><input id="fps" class="sm" type="number" value="30" />
-      <label>quality</label><input id="quality" class="sm" type="number" value="75" />
+      <label>quality</label><input id="quality" class="sm" type="number" value="90" />
       <label>w</label><input id="width" class="sm" type="number" value="640" />
       <label>h</label><input id="height" class="sm" type="number" value="480" />
       <button class="primary" onclick="createAgent()">+ launch agent</button>
@@ -131,7 +131,7 @@ function render(agents) {
   $("empty").style.display = agents.length ? "none" : "block";
   $("rows").innerHTML = agents.map(a => {
     const nid = a.node_id
-      ? `<div class="nid"><b>${a.node_id}</b> <button onclick="copyNid('${a.node_id}')">copy cmd</button></div>`
+      ? `<div class="nid"><b>${a.node_id}</b> <button onclick="copyNid('${a.node_id}')">copy cmd</button> <a href="/sources/${a.node_id}" target="_blank"><button>watch ▶</button></a></div>`
       : `<span class="muted">resolving…</span>`;
     const logs = (a.log_tail || []).join("\n").replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
     const buttons = (a.status === "running"

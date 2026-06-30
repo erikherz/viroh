@@ -22,6 +22,7 @@ chrono = { version = "0.4", features = ["serde"] }
 axum = "0.8"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 rustls = { version = "0.23", features = ["ring"] }
+async-stream = "0.3"
 
 [lib]
 name = "viroh"

@@ -9,26 +9,35 @@ use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::{
+    body::{Body, Bytes},
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use clap::Parser;
+use iroh::{endpoint::presets, Endpoint, EndpointId, RelayMap, RelayMode};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
+use viroh::{read_frame, read_meta, ALPN};
+
 const LOG_CAP: usize = 300;
 const UI_HTML: &str = include_str!("../fleet_ui.html");
+const SOURCE_PAGE_HTML: &str = include_str!("../source_page.html");
+/// Multipart boundary for the browser MJPEG bridge.
+const BOUNDARY: &str = "virohframe";
 
 #[derive(Parser, Debug)]
 #[command(about = "Web fleet manager for viroh sender agents")]
@@ -112,6 +121,8 @@ struct Inner {
     sender_bin: PathBuf,
     token: Option<String>,
     relay_url: Option<String>,
+    /// Our own iroh client endpoint, used to dial senders for the browser bridge.
+    endpoint: Endpoint,
 }
 
 #[tokio::main]
@@ -133,6 +144,19 @@ async fn main() -> Result<()> {
         anyhow::bail!("viroh-sender not found at {}", sender_bin.display());
     }
 
+    // A client iroh endpoint the gateway uses to dial senders on behalf of
+    // browsers. Mirrors the relay config we pass to the agents.
+    let mut ep_builder = Endpoint::builder(presets::N0);
+    if let Some(url) = &args.relay_url {
+        let map = RelayMap::try_from_iter([url.as_str()])
+            .map_err(|e| anyhow::anyhow!("invalid --relay-url {url}: {e}"))?;
+        ep_builder = ep_builder.relay_mode(RelayMode::Custom(map));
+    }
+    let endpoint = ep_builder
+        .bind()
+        .await
+        .context("binding gateway iroh endpoint")?;
+
     let state = AppState {
         inner: Arc::new(Inner {
             agents: Mutex::new(HashMap::new()),
@@ -140,6 +164,7 @@ async fn main() -> Result<()> {
             sender_bin,
             token: args.token,
             relay_url: args.relay_url,
+            endpoint,
         }),
     };
 
@@ -152,9 +177,14 @@ async fn main() -> Result<()> {
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state.clone());
 
+    // `/sources/*` is intentionally public (no token): the whole point is that
+    // anyone with the URL can watch a sender's video in a browser.
     let app = Router::new()
         .route("/", get(|| async { Html(UI_HTML) }))
-        .nest("/api", api);
+        .route("/sources/{node_id}", get(source_page))
+        .route("/sources/{node_id}/stream", get(source_stream))
+        .nest("/api", api)
+        .with_state(state.clone());
 
     match (args.tls_cert, args.tls_key) {
         (Some(cert), Some(key)) => {
@@ -282,6 +312,76 @@ async fn agent_logs(
     let agent = agents.get(&id).ok_or(ApiError::NotFound)?;
     let logs = agent.rt.lock().unwrap().logs.iter().cloned().collect();
     Ok(Json(logs))
+}
+
+/// Public browser page that plays a sender's live video. We only reflect a
+/// syntactically valid node id (hex) into the HTML, so it can't carry markup.
+async fn source_page(Path(node_id): Path<String>) -> Response {
+    let id = node_id.trim();
+    if EndpointId::from_str(id).is_err() {
+        return (StatusCode::BAD_REQUEST, "invalid node id").into_response();
+    }
+    Html(SOURCE_PAGE_HTML.replace("{NODE_ID}", id)).into_response()
+}
+
+/// Public MJPEG bridge: dials the sender over iroh and re-emits its JPEG frames
+/// as `multipart/x-mixed-replace`, which browsers render natively in an `<img>`.
+/// No transcoding — the wire format already is Motion-JPEG.
+async fn source_stream(State(state): State<AppState>, Path(node_id): Path<String>) -> Response {
+    let id = match EndpointId::from_str(node_id.trim()) {
+        Ok(id) => id,
+        Err(_) => return (StatusCode::BAD_REQUEST, "invalid node id").into_response(),
+    };
+
+    let ep = state.inner.endpoint.clone();
+    let conn = match tokio::time::timeout(Duration::from_secs(15), ep.connect(id, ALPN)).await {
+        Ok(Ok(c)) => c,
+        Ok(Err(e)) => {
+            return (StatusCode::BAD_GATEWAY, format!("connect failed: {e}")).into_response()
+        }
+        Err(_) => return (StatusCode::GATEWAY_TIMEOUT, "sender did not answer").into_response(),
+    };
+    let mut recv = match conn.accept_uni().await {
+        Ok(r) => r,
+        Err(e) => {
+            return (StatusCode::BAD_GATEWAY, format!("stream open failed: {e}")).into_response()
+        }
+    };
+    // Consume the metadata handshake before the frames begin.
+    if read_meta(&mut recv).await.is_err() {
+        return (StatusCode::BAD_GATEWAY, "no stream metadata").into_response();
+    }
+
+    let body = Body::from_stream(async_stream::stream! {
+        // Hold the connection open for the body's lifetime; dropping it when the
+        // browser disconnects tears down the iroh stream and the sender's task.
+        let _conn = conn;
+        loop {
+            match read_frame(&mut recv).await {
+                Ok(Some(jpeg)) => {
+                    let head = format!(
+                        "--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+                        jpeg.len()
+                    );
+                    let mut part = Vec::with_capacity(head.len() + jpeg.len() + 2);
+                    part.extend_from_slice(head.as_bytes());
+                    part.extend_from_slice(&jpeg);
+                    part.extend_from_slice(b"\r\n");
+                    yield Ok::<Bytes, std::io::Error>(Bytes::from(part));
+                }
+                _ => break, // sender closed or a read error: end the response
+            }
+        }
+    });
+
+    Response::builder()
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/x-mixed-replace; boundary={BOUNDARY}"),
+        )
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(body)
+        .unwrap()
 }
 
 /// Spawns a `viroh-sender` child and wires up log capture + lifecycle.
