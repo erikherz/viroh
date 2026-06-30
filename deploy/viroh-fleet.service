@@ -1,0 +1,24 @@
+[Unit]
+Description=viroh fleet manager (web UI + API for viroh sender agents)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as root so it can read the Let's Encrypt private key. The fleet spawns
+# viroh-sender child processes; they inherit this user.
+User=root
+WorkingDirectory=/home/ubuntu/viroh
+ExecStart=/home/ubuntu/viroh/target/release/viroh-fleet \
+  --bind 0.0.0.0:8443 \
+  --sender-bin /home/ubuntu/viroh/target/release/viroh-sender \
+  --tls-cert /etc/letsencrypt/live/server.viroh.net/fullchain.pem \
+  --tls-key /etc/letsencrypt/live/server.viroh.net/privkey.pem
+# Set the API token here (or via systemctl edit). Generate one with:
+#   openssl rand -hex 16
+Environment=VIROH_FLEET_TOKEN=CHANGE_ME
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

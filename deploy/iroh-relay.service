@@ -1,0 +1,16 @@
+[Unit]
+Description=iroh relay server (self-hosted, server.viroh.net)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+# Path from `cargo install iroh-relay --features server` (root's cargo bin),
+# or point at a locally built target/release/iroh-relay.
+ExecStart=/root/.cargo/bin/iroh-relay --config-path /home/ubuntu/viroh/deploy/iroh-relay.config.toml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

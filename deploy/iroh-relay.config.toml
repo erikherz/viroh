@@ -1,0 +1,25 @@
+# iroh-relay server config for server.viroh.net
+#
+# Build/install the server binary (needs the `server` feature):
+#   cargo install iroh-relay --features server
+# Run:
+#   iroh-relay --config-path /home/ubuntu/viroh/deploy/iroh-relay.config.toml
+#
+# Clients reach this relay at  https://server.viroh.net  (port 443).
+
+# Plain-HTTP relay services bind here (used for the captive-portal check and,
+# when no TLS is set, the relay itself). Keep 80 free for ACME/HTTP if needed.
+http_bind_addr = "0.0.0.0:80"
+
+# Relay actually proxies endpoint traffic (vs. holepunch-only).
+enable_relay = true
+
+[tls]
+# HTTPS relay endpoint clients connect to.
+https_bind_addr = "0.0.0.0:443"
+hostname = ["server.viroh.net"]
+
+# Use the existing Let's Encrypt certificate instead of having the relay run ACME.
+cert_mode = "Manual"
+manual_cert_path = "/etc/letsencrypt/live/server.viroh.net/fullchain.pem"
+manual_key_path = "/etc/letsencrypt/live/server.viroh.net/privkey.pem"
