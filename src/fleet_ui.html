@@ -19,6 +19,9 @@
   input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9;
           border-radius: 6px; padding: 6px 8px; font: inherit; }
   input.sm { width: 70px; }
+  select { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9;
+           border-radius: 6px; padding: 6px 8px; font: inherit; }
+  select.rowcolor { padding: 4px 6px; font-size: 12px; }
   button { background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
            border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
   button:hover { border-color: #58ff8c; }
@@ -50,13 +53,6 @@
   <h1>◧ viroh fleet</h1>
   <span class="stamp" id="count">—</span>
   <span style="flex:1"></span>
-  <label for="color">receiver color</label>
-  <select id="color" title="Color mode baked into the copied viroh-receiver command">
-    <option value="auto">auto</option>
-    <option value="256">256-color (macOS Terminal)</option>
-    <option value="truecolor">truecolor (iTerm2/Ghostty)</option>
-    <option value="mono">mono</option>
-  </select>
   <label for="token">token</label>
   <input id="token" type="password" placeholder="(optional)" style="width:200px" />
 </header>
@@ -89,9 +85,17 @@ const $ = (id) => document.getElementById(id);
 const tokenEl = $("token");
 tokenEl.value = localStorage.getItem("viroh_token") || "";
 tokenEl.addEventListener("change", () => localStorage.setItem("viroh_token", tokenEl.value));
-const colorEl = $("color");
-colorEl.value = localStorage.getItem("viroh_color") || "auto";
-colorEl.addEventListener("change", () => localStorage.setItem("viroh_color", colorEl.value));
+// Receiver color mode is a per-sender viewer preference, kept keyed by agent id.
+let colorByAgent = JSON.parse(localStorage.getItem("viroh_colors") || "{}");
+function colorFor(id) { return colorByAgent[id] || "auto"; }
+function setColor(id, v) {
+  colorByAgent[id] = v;
+  localStorage.setItem("viroh_colors", JSON.stringify(colorByAgent));
+}
+function colorOptions(sel) {
+  return [["auto","auto"],["256","256-color"],["truecolor","truecolor"],["mono","mono"]]
+    .map(([v,label]) => `<option value="${v}"${v===sel?" selected":""}>${label}</option>`).join("");
+}
 
 function headers(json) {
   const h = {};
@@ -123,8 +127,8 @@ async function act(id, what) {
     await refresh();
   } catch (e) { alert(e.message); }
 }
-function copyNid(nid) {
-  const c = $("color").value;
+function copyNid(id, nid) {
+  const c = colorFor(id);
   const flag = c && c !== "auto" ? "--color " + c + " " : "";
   navigator.clipboard.writeText("viroh-receiver " + flag + nid);
 }
@@ -144,7 +148,9 @@ function render(agents) {
            <div class="row" style="margin-top:6px">
              <a href="/sources/${a.node_id}" target="_blank"><button>watch ▶</button></a>
              <button onclick="copyLink('${a.node_id}')">copy link</button>
-             <button onclick="copyNid('${a.node_id}')">copy cmd</button>
+             <select class="rowcolor" title="receiver color mode baked into the copied command"
+                     onchange="setColor(${a.id}, this.value)">${colorOptions(colorFor(a.id))}</select>
+             <button onclick="copyNid(${a.id}, '${a.node_id}')">copy cmd</button>
            </div>
            <a class="weblink" href="/sources/${a.node_id}" target="_blank" title="${watchUrl(a.node_id)}">${watchUrl(a.node_id)}</a>
          </div>`
