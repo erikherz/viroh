@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>viroh fleet</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         background: #0d1117; color: #c9d1d9; }
+  header { padding: 14px 20px; border-bottom: 1px solid #21262d; display: flex;
+           gap: 16px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; color: #58ff8c; letter-spacing: 1px; }
+  main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+          padding: 16px; margin-bottom: 20px; }
+  label { display: inline-block; color: #8b949e; margin-right: 4px; }
+  input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9;
+          border-radius: 6px; padding: 6px 8px; font: inherit; }
+  input.sm { width: 70px; }
+  button { background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
+           border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #58ff8c; }
+  button.primary { background: #1f6f3f; border-color: #2ea043; color: #fff; }
+  button.danger:hover { border-color: #f85149; color: #f85149; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d;
+           vertical-align: top; }
+  th { color: #8b949e; font-weight: 600; }
+  .pill { padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+  .running { background: #1f6f3f; color: #d3ffe2; }
+  .stopped { background: #4d4f54; color: #e6edf3; }
+  .exited  { background: #6e2b2b; color: #ffd7d3; }
+  .nid { font-size: 12px; color: #8b949e; word-break: break-all; max-width: 320px; }
+  .nid b { color: #79c0ff; }
+  .logs { white-space: pre-wrap; font-size: 12px; color: #8b949e; max-width: 460px;
+          max-height: 120px; overflow: auto; background: #0d1117; padding: 6px 8px;
+          border-radius: 6px; margin-top: 6px; }
+  .muted { color: #6e7681; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .stamp { color: #6e7681; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>◧ viroh fleet</h1>
+  <span class="stamp" id="count">—</span>
+  <span style="flex:1"></span>
+  <label for="token">token</label>
+  <input id="token" type="password" placeholder="(optional)" style="width:200px" />
+</header>
+<main>
+  <div class="card">
+    <div class="row">
+      <label>name</label><input id="name" value="agent-1" />
+      <label>fps</label><input id="fps" class="sm" type="number" value="30" />
+      <label>quality</label><input id="quality" class="sm" type="number" value="75" />
+      <label>w</label><input id="width" class="sm" type="number" value="640" />
+      <label>h</label><input id="height" class="sm" type="number" value="480" />
+      <button class="primary" onclick="createAgent()">+ launch agent</button>
+      <span id="err" style="color:#f85149"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr>
+        <th>#</th><th>name</th><th>status</th><th>node id</th>
+        <th>pid</th><th>started</th><th>actions</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p id="empty" class="muted">No agents yet — launch one above.</p>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const tokenEl = $("token");
+tokenEl.value = localStorage.getItem("viroh_token") || "";
+tokenEl.addEventListener("change", () => localStorage.setItem("viroh_token", tokenEl.value));
+
+function headers(json) {
+  const h = {};
+  if (json) h["Content-Type"] = "application/json";
+  const t = tokenEl.value.trim();
+  if (t) h["Authorization"] = "Bearer " + t;
+  return h;
+}
+async function api(path, opts = {}) {
+  const res = await fetch("/api" + path, { headers: headers(opts.body), ...opts });
+  if (!res.ok) throw new Error((await res.text()) || res.status);
+  return res.status === 204 ? null : res.json();
+}
+
+async function createAgent() {
+  $("err").textContent = "";
+  const body = JSON.stringify({
+    name: $("name").value || "agent",
+    fps: +$("fps").value, quality: +$("quality").value,
+    width: +$("width").value, height: +$("height").value,
+  });
+  try { await api("/agents", { method: "POST", body }); await refresh(); }
+  catch (e) { $("err").textContent = e.message; }
+}
+async function act(id, what) {
+  try {
+    if (what === "delete") await api("/agents/" + id, { method: "DELETE" });
+    else await api("/agents/" + id + "/" + what, { method: "POST" });
+    await refresh();
+  } catch (e) { alert(e.message); }
+}
+function copyNid(nid) { navigator.clipboard.writeText("viroh-receiver " + nid); }
+
+function render(agents) {
+  $("count").textContent = agents.length + " agent" + (agents.length === 1 ? "" : "s");
+  $("empty").style.display = agents.length ? "none" : "block";
+  $("rows").innerHTML = agents.map(a => {
+    const nid = a.node_id
+      ? `<div class="nid"><b>${a.node_id}</b> <button onclick="copyNid('${a.node_id}')">copy cmd</button></div>`
+      : `<span class="muted">resolving…</span>`;
+    const logs = (a.log_tail || []).join("\n").replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+    const buttons = (a.status === "running"
+        ? `<button onclick="act(${a.id},'stop')">stop</button>`
+        : `<button onclick="act(${a.id},'start')">start</button>`)
+      + ` <button class="danger" onclick="act(${a.id},'delete')">delete</button>`;
+    return `<tr>
+      <td>${a.id}</td>
+      <td>${a.name}<div class="stamp">${a.width}×${a.height} @ ${a.fps}fps q${a.quality}</div></td>
+      <td><span class="pill ${a.status}">${a.status}</span></td>
+      <td>${nid}<div class="logs">${logs}</div></td>
+      <td>${a.pid ?? "—"}</td>
+      <td class="stamp">${(a.started_at || "").replace("T"," ").slice(0,19)}</td>
+      <td>${buttons}</td>
+    </tr>`;
+  }).join("");
+}
+async function refresh() {
+  try { render(await api("/agents")); } catch (e) { $("count").textContent = "⚠ " + e.message; }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

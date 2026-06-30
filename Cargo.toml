@@ -1,0 +1,39 @@
+[package]
+name = "viroh"
+version = "0.1.0"
+edition = "2021"
+description = "Iroh-based synthetic video sender + terminal ASCII receiver"
+
+[dependencies]
+iroh = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "time", "signal", "process", "sync"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+jpeg-encoder = "0.6"
+zune-jpeg = "0.4"
+crossterm = "0.28"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Web fleet manager only (compiled solely when building `viroh-fleet`).
+axum = "0.8"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+rustls = { version = "0.23", features = ["ring"] }
+
+[lib]
+name = "viroh"
+path = "src/lib.rs"
+
+[[bin]]
+name = "viroh-sender"
+path = "src/bin/sender.rs"
+
+[[bin]]
+name = "viroh-receiver"
+path = "src/bin/receiver.rs"
+
+[[bin]]
+name = "viroh-fleet"
+path = "src/bin/fleet.rs"
