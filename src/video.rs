@@ -116,11 +116,14 @@ impl TimecodeSource {
         }
 
         // Moving sweep bar: a bright vertical band that scrolls left->right once
-        // per second, making motion plainly visible in the ASCII render.
+        // per second. Drawn only in the top and bottom strips so it never crosses
+        // the centered timecode in the middle of the frame.
         let period = self.fps.max(1) as u128 * 33; // ~1s worth of ms
         let phase = (elapsed_ms % period) as f64 / period as f64;
         let bar_x = (phase * self.width as f64) as usize;
-        f.fill_rect(bar_x.saturating_sub(4), 0, 9, self.height, [40, 120, 200]);
+        let strip = self.height * 22 / 100;
+        f.fill_rect(bar_x.saturating_sub(4), 0, 9, strip, [40, 120, 200]);
+        f.fill_rect(bar_x.saturating_sub(4), self.height - strip, 9, strip, [40, 120, 200]);
 
         // Corner crosshair / border so the frame edges are visible.
         f.fill_rect(0, 0, self.width, 3, [80, 80, 80]);
