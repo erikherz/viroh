@@ -151,6 +151,53 @@ processes on the host it runs on.
 Each agent is a child `viroh-sender`; the fleet captures its stdout/stderr,
 sniffs the node id, and kills it cleanly on stop/delete (and on fleet exit).
 
+### Launching a sender — three ways
+
+| how | managed by fleet? | shows in dashboard? | needs token? | best for |
+| --- | --- | --- | --- | --- |
+| **Web dashboard** | yes | yes | yes (paste in UI) | point-and-click |
+| **Fleet API** (`curl`) | yes | yes | yes | CLI ergonomics + admin visibility |
+| **Standalone binary** | no | no | no | quick local tests, throwaway senders |
+
+**1. Web dashboard.** Open the fleet UI, fill in name / fps / quality / resolution,
+click **+ launch agent**. The agent appears in the table with its node id, a
+**watch ▶** link, and stop/start/delete.
+*Downside:* you need the browser UI open.
+
+**2. Fleet API from the shell.** The fleet *spawns and tracks* the sender, so it
+behaves exactly like a UI-launched one (appears in the dashboard, stop/start
+works) — you just trigger it from the command line:
+
+```sh
+# on the fleet host
+TOKEN=$(sudo systemctl show viroh-fleet -p Environment | grep -o 'VIROH_FLEET_TOKEN=[^ ]*' | cut -d= -f2)
+curl -sk -X POST https://localhost:8443/api/agents \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"cli-test","fps":30,"quality":90,"width":640,"height":480}'
+```
+
+The node id comes back `null` for a second or two while iroh resolves its
+address, then populates in the dashboard.
+*Downside:* needs the token, and only manages senders on the fleet's own host.
+
+**3. Standalone binary.** Run `viroh-sender` directly — no fleet, no token,
+anywhere:
+
+```sh
+viroh-sender --name "cli-test" --relay-url https://server.viroh.net
+#   ... prints its node id; stays in the foreground waiting for receivers
+```
+
+The fleet has no handle on this process, so it **won't appear in the dashboard**
+and has no managed stop/start — read the node id from its own stdout and stop it
+with Ctrl-C. It's still fully watchable: the browser gateway and `viroh-receiver`
+both just dial the node id. To keep it alive after logout, detach it:
+
+```sh
+nohup viroh-sender --name "cli-test" --relay-url https://server.viroh.net > ~/cli-sender.log 2>&1 &
+grep 'node id:' ~/cli-sender.log
+```
+
 ### Watch in a browser (`/sources/<node-id>`)
 
 The fleet runs its own iroh client endpoint and **bridges a sender's stream to
