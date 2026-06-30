@@ -6,9 +6,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-# Path from `cargo install iroh-relay --features server` (root's cargo bin),
-# or point at a locally built target/release/iroh-relay.
-ExecStart=/root/.cargo/bin/iroh-relay --config-path /home/ubuntu/viroh/deploy/iroh-relay.config.toml
+# Path from `cargo install iroh-relay --features server` run as the ubuntu user.
+# (Runs as root via User=root below so it can bind :443 and read the TLS key.)
+ExecStart=/home/ubuntu/.cargo/bin/iroh-relay --config-path /home/ubuntu/viroh/deploy/iroh-relay.config.toml
 Restart=on-failure
 RestartSec=2
 
