@@ -59,21 +59,22 @@ impl Frame {
         x: usize,
         y: usize,
         text: &str,
-        scale: usize,
+        xscale: usize,
+        yscale: usize,
         weight: usize,
         c: [u8; 3],
     ) -> usize {
         let mut cx = x;
-        let advance = (font::GLYPH_W + 1) * scale;
+        let advance = (font::GLYPH_W + 1) * xscale;
         for ch in text.chars() {
             if let Some(rows) = font::glyph(ch) {
                 for (ry, bits) in rows.iter().enumerate() {
                     for col in 0..font::GLYPH_W {
                         // bit 4 is the leftmost column
                         if bits & (1 << (font::GLYPH_W - 1 - col)) != 0 {
-                            let px = cx + col * scale;
-                            let py = y + ry * scale;
-                            self.fill_rect(px, py, scale + weight, scale + weight, c);
+                            let px = cx + col * xscale;
+                            let py = y + ry * yscale;
+                            self.fill_rect(px, py, xscale + weight, yscale + weight, c);
                         }
                     }
                 }
@@ -131,25 +132,29 @@ impl TimecodeSource {
         f.fill_rect(0, 0, 3, self.height, [80, 80, 80]);
         f.fill_rect(self.width - 3, 0, 3, self.height, [80, 80, 80]);
 
-        // Big centered timecode, scaled to fill ~85% of the width (so all 12
-        // characters fit with a margin), and drawn bold so the strokes read
-        // clearly after the ASCII renderer downsamples the frame.
+        // Big centered timecode. The horizontal scale fits all 12 characters in
+        // ~85% of the width; the vertical scale is stretched ~2.6x taller, since
+        // terminals are far shorter than they are wide and the ASCII renderer
+        // squeezes the frame's height much harder than its width. Taller digits
+        // therefore land on many more terminal rows and read clearly.
         let tc = format_timecode(elapsed_ms);
         let glyph_adv = font::GLYPH_W + 1;
-        let scale = ((self.width * 85 / 100) / (tc.chars().count() * glyph_adv)).max(1);
-        let weight = scale / 2;
-        let text_w = tc.chars().count() * glyph_adv * scale;
+        let xscale = ((self.width * 85 / 100) / (tc.chars().count() * glyph_adv)).max(1);
+        let yscale = (xscale * 13 / 5).max(1); // ~2.6x taller
+        let weight = xscale / 2;
+        let text_w = tc.chars().count() * glyph_adv * xscale;
+        let text_h = font::GLYPH_H * yscale;
         let tx = (self.width.saturating_sub(text_w)) / 2;
-        let ty = self.height / 2 - (font::GLYPH_H * scale) / 2;
+        let ty = (self.height.saturating_sub(text_h)) / 2;
         // drop shadow then bright text
-        f.draw_text(tx + scale / 3, ty + scale / 3, &tc, scale, weight, [0, 0, 0]);
-        f.draw_text(tx, ty, &tc, scale, weight, [80, 255, 120]);
+        f.draw_text(tx + xscale / 3, ty + yscale / 3, &tc, xscale, yscale, weight, [0, 0, 0]);
+        f.draw_text(tx, ty, &tc, xscale, yscale, weight, [80, 255, 120]);
 
         // Small label + frame counter.
         let label = format!("VIROH {}X{} {}FPS", self.width, self.height, self.fps);
-        f.draw_text(16, 16, &label, 3, 1, [200, 200, 80]);
+        f.draw_text(16, 16, &label, 3, 3, 1, [200, 200, 80]);
         let counter = format!("FRAME {}", self.frame_no);
-        f.draw_text(16, self.height - 16 - font::GLYPH_H * 3, &counter, 3, 1, [180, 180, 180]);
+        f.draw_text(16, self.height - 16 - font::GLYPH_H * 3, &counter, 3, 3, 1, [180, 180, 180]);
 
         self.frame_no += 1;
         f
