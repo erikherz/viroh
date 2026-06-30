@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>viroh — peer-to-peer video over iroh</title>
+<meta name="description" content="viroh streams live video over iroh's QUIC network — watch it as terminal ASCII or real browser video. End-to-end encrypted, NAT-traversing, self-hostable relay. Pure Rust." />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta property="og:title" content="viroh — peer-to-peer video over iroh" />
+<meta property="og:description" content="Video that dials a public key, not an address. Terminal or browser. Pure Rust." />
+<meta property="og:type" content="website" />
+<style>
+  :root {
+    --ink: #0f172a; --muted: #64748b; --line: #e2e8f0;
+    --bg: #ffffff; --bg2: #f8fafc; --card: #ffffff;
+    --blue: #60a5fa; --teal: #34d399; --violet: #a78bfa;
+    --ink-badge: #0d1117;
+    --grad: linear-gradient(135deg, #60a5fa 0%, #34d399 50%, #a78bfa 100%);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font-family: var(--sans); color: var(--ink); background: var(--bg);
+         line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* header */
+  header { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,0.82);
+           backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
+  .nav { display: flex; align-items: center; gap: 22px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px;
+           letter-spacing: -0.3px; }
+  .badge { width: 30px; height: 30px; display: block; }
+  .nav .links { display: flex; gap: 22px; margin-left: auto; align-items: center; }
+  .nav .links a { color: var(--muted); font-size: 14.5px; font-weight: 500; }
+  .nav .links a:hover { color: var(--ink); }
+  .btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14.5px;
+         padding: 9px 16px; border-radius: 9px; border: 1px solid var(--line); cursor: pointer;
+         transition: transform .08s ease, box-shadow .2s ease, border-color .2s; white-space: nowrap; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn.primary { color: #fff; border: 0; background: var(--ink); }
+  .btn.primary:hover { box-shadow: 0 8px 24px rgba(15,23,42,0.22); }
+  .btn.ghost:hover { border-color: #cbd5e1; }
+
+  /* hero */
+  .hero { padding: 86px 0 64px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before { content: ""; position: absolute; inset: -40% 0 auto 0; height: 520px;
+    background: radial-gradient(60% 60% at 50% 0%, rgba(52,211,153,0.16), rgba(96,165,250,0.10) 40%, transparent 72%);
+    pointer-events: none; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono);
+             font-size: 12.5px; color: var(--muted); border: 1px solid var(--line);
+             padding: 5px 12px; border-radius: 999px; background: var(--bg2); }
+  .eyebrow b { color: var(--teal); font-weight: 700; }
+  h1 { font-size: clamp(34px, 6vw, 60px); line-height: 1.06; letter-spacing: -1.5px;
+       margin: 22px auto 0; max-width: 14ch; font-weight: 850; }
+  .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text;
+          -webkit-text-fill-color: transparent; }
+  .lede { font-size: clamp(16px, 2.2vw, 20px); color: var(--muted); max-width: 60ch;
+          margin: 22px auto 0; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+  .metrics { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 40px; }
+  .metric { font-family: var(--mono); font-size: 13px; color: var(--ink); background: var(--bg2);
+            border: 1px solid var(--line); border-radius: 9px; padding: 9px 14px; }
+  .metric span { color: var(--muted); }
+
+  /* sections */
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  section.alt { background: var(--bg2); }
+  .kicker { font-family: var(--mono); font-size: 12.5px; letter-spacing: 1px; text-transform: uppercase;
+            color: var(--teal); font-weight: 700; }
+  h2 { font-size: clamp(26px, 3.6vw, 38px); letter-spacing: -0.8px; margin: 10px 0 0; font-weight: 800; max-width: 18ch; }
+  .sub { color: var(--muted); font-size: 17px; margin-top: 12px; max-width: 62ch; }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 40px; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .step .n { font-family: var(--mono); font-size: 12px; color: #fff; background: var(--ink);
+             width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-weight: 700; }
+  .step h3 { margin: 14px 0 6px; font-size: 17px; }
+  .step p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .step code { font-family: var(--mono); font-size: 12.5px; background: var(--bg2);
+               border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; color: var(--ink); }
+
+  /* feature grid */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 40px; }
+  .feat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px;
+          transition: border-color .2s, transform .08s; }
+  .feat:hover { border-color: #cbd5e1; transform: translateY(-2px); }
+  .feat .ico { font-size: 22px; }
+  .feat h3 { margin: 12px 0 6px; font-size: 16.5px; }
+  .feat p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  /* fleet showcase */
+  .panel { margin-top: 40px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+           background: var(--card); }
+  .panel .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line);
+                background: var(--bg2); font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #f87171; } .dot.y { background: #fbbf24; } .dot.g { background: #34d399; }
+  .term { background: #0d1117; color: #c9d1d9; padding: 20px 18px; font-family: var(--mono);
+          font-size: 13px; line-height: 1.7; overflow-x: auto; }
+  .term .p { color: #58ff8c; } .term .m { color: #6e7681; } .term .b { color: #79c0ff; }
+  .term .w { color: #e6edf3; }
+
+  /* cta band */
+  .band { text-align: center; }
+  .band .card2 { background: var(--ink); color: #fff; border-radius: 20px; padding: 56px 28px; position: relative; overflow: hidden; }
+  .band .card2::after { content: ""; position: absolute; inset: auto -10% -60% -10%; height: 280px;
+    background: radial-gradient(50% 80% at 50% 100%, rgba(52,211,153,0.35), transparent 70%); }
+  .band h2 { color: #fff; margin: 0 auto; max-width: 20ch; }
+  .band .sub { color: #94a3b8; margin: 14px auto 0; }
+  .band .cta { margin-top: 28px; }
+  .btn.ondark { background: #fff; color: var(--ink); border: 0; }
+  .btn.onlink { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.25); }
+
+  /* footer */
+  footer { border-top: 1px solid var(--line); padding: 40px 0; color: var(--muted); font-size: 14px; }
+  .foot { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+  .foot .sep { margin-left: auto; }
+  footer a { color: var(--muted); } footer a:hover { color: var(--ink); }
+
+  @media (max-width: 800px) {
+    .nav .links a:not(.btn) { display: none; }
+    .steps, .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="/">
+      <svg class="badge" viewBox="0 0 64 64" aria-hidden="true">
+        <defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#60a5fa"/><stop offset="0.5" stop-color="#34d399"/><stop offset="1" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <rect x="6" y="6" width="52" height="52" rx="14" fill="#0d1117" stroke="url(#hg)" stroke-width="3"/>
+        <text x="32" y="43" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="27" font-weight="800" text-anchor="middle" fill="url(#hg)">vI</text>
+      </svg>
+      viroh
+    </a>
+    <nav class="links">
+      <a href="#how">How it works</a>
+      <a href="#why">Why viroh</a>
+      <a href="#fleet">Fleet</a>
+      <a href="https://github.com/erikherz/viroh" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn primary" href="https://server.viroh.net:8443/" target="_blank" rel="noopener">Watch a live demo →</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow">Powered by <b>iroh</b> · QUIC peer-to-peer</span>
+      <h1>Video that dials a <span class="grad">public key</span>, not an address.</h1>
+      <p class="lede">viroh streams live video over iroh's QUIC network — watch it as colored
+        terminal ASCII or as real video in your browser. End-to-end encrypted, NAT-traversing,
+        with a relay you can host yourself. Pure Rust, no ffmpeg.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://server.viroh.net:8443/" target="_blank" rel="noopener">Watch a live demo →</a>
+        <a class="btn ghost" href="#how">See how it works</a>
+      </div>
+      <div class="metrics">
+        <div class="metric">640×480 <span>@ 30fps</span></div>
+        <div class="metric">Motion-JPEG <span>over QUIC</span></div>
+        <div class="metric">dial by <span>node id</span></div>
+        <div class="metric">🦀 <span>pure Rust</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <span class="kicker">How it works</span>
+      <h2>A sender, a key, and anyone who has it.</h2>
+      <p class="sub">Every endpoint is an Ed25519 keypair. The public key <em>is</em> the address you
+        dial — no IP, no port, even across NATs. The connection's TLS is authenticated by that key
+        directly, so reaching an id means you reached exactly that peer.</p>
+      <div class="steps">
+        <div class="step">
+          <div class="n">1</div>
+          <h3>Synthesize or capture</h3>
+          <p>A sender produces 640×480 frames — today a synthetic timecode source, tomorrow a real
+            camera — and encodes each as a JPEG. Motion-JPEG, pure Rust.</p>
+        </div>
+        <div class="step">
+          <div class="n">2</div>
+          <h3>Stream over iroh</h3>
+          <p>Frames flow over a QUIC uni-stream <code>viroh/mjpeg/1</code>. iroh bootstraps through a
+            relay, then hole-punches to a direct peer-to-peer path when it can.</p>
+        </div>
+        <div class="step">
+          <div class="n">3</div>
+          <h3>Watch anywhere</h3>
+          <p>Dial the node id from a terminal for colored ASCII, or open
+            <code>/sources/&lt;id&gt;</code> in a browser for real video. Many viewers, one sender.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="why" class="alt">
+    <div class="wrap">
+      <span class="kicker">Why viroh</span>
+      <h2>Built on the network, not on a server farm.</h2>
+      <div class="grid">
+        <div class="feat"><div class="ico">🔑</div><h3>Dial by public key</h3>
+          <p>The node id is the address. TLS is authenticated by the key itself — no certificate authority, no DNS to trust.</p></div>
+        <div class="feat"><div class="ico">🕳️</div><h3>NAT traversal built in</h3>
+          <p>Relay-assisted bootstrap, then a silent migration to a direct UDP path. Works behind NATs from the first packet.</p></div>
+        <div class="feat"><div class="ico">🖥️</div><h3>Watch in your terminal</h3>
+          <p>A receiver renders the stream as colored Unicode half-blocks — a legible anti-aliased timecode, right in your shell.</p></div>
+        <div class="feat"><div class="ico">🌐</div><h3>…or in a browser</h3>
+          <p>The gateway bridges the Motion-JPEG stream to <code>multipart/x-mixed-replace</code> — real video in a plain <code>&lt;img&gt;</code>, no transcoding.</p></div>
+        <div class="feat"><div class="ico">🛰️</div><h3>Host your own relay</h3>
+          <p>Run your own iroh relay and DNS directory for a fully independent network — zero dependency on anyone else's infrastructure.</p></div>
+        <div class="feat"><div class="ico">🦀</div><h3>Pure Rust, no ffmpeg</h3>
+          <p>Encode and decode with <code>jpeg-encoder</code> + <code>zune-jpeg</code>. No C codec libraries, no system dependencies.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="fleet">
+    <div class="wrap">
+      <span class="kicker">Fleet</span>
+      <h2>Run a fleet. Watch it scale, live.</h2>
+      <p class="sub">A small web app manages many sender agents on one host — launch from the dashboard
+        or the command line, tail logs, and open a live browser player for any agent. Every viewer is
+        an independent encrypted connection.</p>
+      <div class="panel">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          &nbsp;server.viroh.net:8443 — viroh fleet</div>
+        <div class="term"><span class="w">viroh sender ready.</span>
+  name   : <span class="b">studio-A</span>
+  node id: <span class="b">e33a598350c37a5adaa422ce9f061de7834a0dbc…</span>
+  source : 640x480 @ 30fps, jpeg q90
+  relay  : https://server.viroh.net (custom)
+
+<span class="m">Start a receiver with:</span>
+    <span class="w">viroh-receiver e33a598350c37a5adaa422ce9f061de7834a0dbc…</span>
+<span class="p">+ receiver connected</span> · <span class="p">+ browser viewer</span> · streaming…</div>
+      </div>
+      <div class="cta" style="justify-content:flex-start; margin-top:24px;">
+        <a class="btn primary" href="https://server.viroh.net:8443/" target="_blank" rel="noopener">Open the dashboard →</a>
+        <a class="btn ghost" href="https://github.com/erikherz/viroh" target="_blank" rel="noopener">Read the docs</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <div class="card2">
+        <span class="kicker" style="color:#34d399">Open source</span>
+        <h2>Clone it, point it at your own relay, go live.</h2>
+        <p class="sub">viroh is pure Rust and self-hostable end to end. Build the binaries, run a sender,
+          and watch it from a terminal or a browser in minutes.</p>
+        <div class="cta">
+          <a class="btn ondark" href="https://github.com/erikherz/viroh" target="_blank" rel="noopener">View on GitHub</a>
+          <a class="btn onlink" href="mailto:erik@vivoh.com">Get in touch</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="/" style="font-size:16px;">
+      <svg class="badge" viewBox="0 0 64 64" aria-hidden="true" style="width:24px;height:24px;">
+        <defs><linearGradient id="fg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#60a5fa"/><stop offset="0.5" stop-color="#34d399"/><stop offset="1" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <rect x="6" y="6" width="52" height="52" rx="14" fill="#0d1117" stroke="url(#fg)" stroke-width="3"/>
+        <text x="32" y="43" font-size="27" font-weight="800" text-anchor="middle" fill="url(#fg)">vI</text>
+      </svg>
+      viroh
+    </a>
+    <span>— peer-to-peer video over iroh</span>
+    <span class="sep"></span>
+    <a href="https://github.com/erikherz/viroh" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://www.iroh.computer" target="_blank" rel="noopener">iroh</a>
+    <a href="mailto:erik@vivoh.com">erik@vivoh.com</a>
+  </div>
+</footer>
+
+</body>
+</html>

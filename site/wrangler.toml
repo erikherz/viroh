@@ -1,0 +1,13 @@
+name = "viroh"
+compatibility_date = "2025-01-01"
+
+# Static marketing site served by a Cloudflare Worker (Workers Static Assets).
+# No server-side code: Wrangler serves ./public directly, with index.html at /.
+[assets]
+directory = "./public"
+not_found_handling = "404-page"
+
+# Attach the route in the Cloudflare dashboard, or uncomment and set your zone:
+# routes = [
+#   { pattern = "viroh.net", custom_domain = true }
+# ]
