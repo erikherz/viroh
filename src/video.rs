@@ -51,8 +51,18 @@ impl Frame {
     }
 
     /// Draws `text` with the 5x7 font, scaled by `scale`, top-left at (x, y).
-    /// Returns the x coordinate just past the drawn text.
-    fn draw_text(&mut self, x: usize, y: usize, text: &str, scale: usize, c: [u8; 3]) -> usize {
+    /// `weight` thickens each stroke by that many extra pixels so the glyphs
+    /// survive the heavy downsampling the ASCII renderer applies. Returns the x
+    /// coordinate just past the drawn text.
+    fn draw_text(
+        &mut self,
+        x: usize,
+        y: usize,
+        text: &str,
+        scale: usize,
+        weight: usize,
+        c: [u8; 3],
+    ) -> usize {
         let mut cx = x;
         let advance = (font::GLYPH_W + 1) * scale;
         for ch in text.chars() {
@@ -63,7 +73,7 @@ impl Frame {
                         if bits & (1 << (font::GLYPH_W - 1 - col)) != 0 {
                             let px = cx + col * scale;
                             let py = y + ry * scale;
-                            self.fill_rect(px, py, scale, scale, c);
+                            self.fill_rect(px, py, scale + weight, scale + weight, c);
                         }
                     }
                 }
@@ -118,21 +128,25 @@ impl TimecodeSource {
         f.fill_rect(0, 0, 3, self.height, [80, 80, 80]);
         f.fill_rect(self.width - 3, 0, 3, self.height, [80, 80, 80]);
 
-        // Big centered timecode.
+        // Big centered timecode, scaled to fill ~85% of the width (so all 12
+        // characters fit with a margin), and drawn bold so the strokes read
+        // clearly after the ASCII renderer downsamples the frame.
         let tc = format_timecode(elapsed_ms);
-        let scale = 10;
-        let text_w = tc.chars().count() * (font::GLYPH_W + 1) * scale;
+        let glyph_adv = font::GLYPH_W + 1;
+        let scale = ((self.width * 85 / 100) / (tc.chars().count() * glyph_adv)).max(1);
+        let weight = scale / 2;
+        let text_w = tc.chars().count() * glyph_adv * scale;
         let tx = (self.width.saturating_sub(text_w)) / 2;
         let ty = self.height / 2 - (font::GLYPH_H * scale) / 2;
         // drop shadow then bright text
-        f.draw_text(tx + scale / 2, ty + scale / 2, &tc, scale, [0, 0, 0]);
-        f.draw_text(tx, ty, &tc, scale, [80, 255, 120]);
+        f.draw_text(tx + scale / 3, ty + scale / 3, &tc, scale, weight, [0, 0, 0]);
+        f.draw_text(tx, ty, &tc, scale, weight, [80, 255, 120]);
 
         // Small label + frame counter.
         let label = format!("VIROH {}X{} {}FPS", self.width, self.height, self.fps);
-        f.draw_text(16, 16, &label, 3, [200, 200, 80]);
+        f.draw_text(16, 16, &label, 3, 1, [200, 200, 80]);
         let counter = format!("FRAME {}", self.frame_no);
-        f.draw_text(16, self.height - 16 - font::GLYPH_H * 3, &counter, 3, [180, 180, 180]);
+        f.draw_text(16, self.height - 16 - font::GLYPH_H * 3, &counter, 3, 1, [180, 180, 180]);
 
         self.frame_no += 1;
         f
