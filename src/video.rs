@@ -143,6 +143,49 @@ fn rasterize_text(font: &Font, text: &str, px: f32) -> (Vec<u8>, usize, usize) {
     (canvas, width, height)
 }
 
+/// In-place morphological dilation (separable max filter, radius `r`), thickening
+/// glyph strokes so each survives the heavy downsample as several solid cells.
+fn dilate(cov: &mut [u8], w: usize, h: usize, r: usize) {
+    if r == 0 || w == 0 || h == 0 {
+        return;
+    }
+    let mut tmp = vec![0u8; w * h];
+    for y in 0..h {
+        let row = y * w;
+        for x in 0..w {
+            let x0 = x.saturating_sub(r);
+            let x1 = (x + r + 1).min(w);
+            let mut m = 0u8;
+            for xx in x0..x1 {
+                m = m.max(cov[row + xx]);
+            }
+            tmp[row + x] = m;
+        }
+    }
+    for y in 0..h {
+        let y0 = y.saturating_sub(r);
+        let y1 = (y + r + 1).min(h);
+        for x in 0..w {
+            let mut m = 0u8;
+            for yy in y0..y1 {
+                m = m.max(tmp[yy * w + x]);
+            }
+            cov[y * w + x] = m;
+        }
+    }
+}
+
+/// In-place contrast curve that pushes anti-aliased mid-grays toward 0/255,
+/// restoring crisp edges. The box-average downsample re-introduces exactly the
+/// smoothing we need, so sharp source edges read better than soft ones.
+fn sharpen(cov: &mut [u8]) {
+    const K: f32 = 2.5;
+    for v in cov.iter_mut() {
+        let n = (*v as f32 / 255.0 - 0.5) * K + 0.5;
+        *v = (n.clamp(0.0, 1.0) * 255.0) as u8;
+    }
+}
+
 /// Generates synthetic timecode frames at a fixed resolution.
 pub struct TimecodeSource {
     width: usize,
@@ -194,23 +237,32 @@ impl TimecodeSource {
         f.fill_rect(0, 0, 3, self.height, [80, 80, 80]);
         f.fill_rect(self.width - 3, 0, 3, self.height, [80, 80, 80]);
 
-        // Big centered timecode, rendered with the anti-aliased font for smooth
-        // edges. We rasterize once at a comfortable size, then box-average it into
-        // a destination rect: ~88% of the width, stretched ~2.6x taller than its
-        // natural aspect. Terminals are far shorter than they are wide and the
-        // ASCII renderer squeezes the frame's height much harder than its width,
-        // so taller digits land on many more terminal rows and read clearly.
+        // Big centered timecode. The terminal output is only ~120x80 effective
+        // pixels, so each cell averages a ~5x6 source block — thin strokes wash
+        // out to gray mush. To survive that we (1) fatten the strokes by dilation
+        // so each is several solid cells wide, (2) sharpen the anti-aliased edges
+        // back toward crisp (the downsample re-adds the smoothing), and (3) draw
+        // white digits on a pure-black panel for maximum luminance separation
+        // through the 256-color quantization. Stretched ~1.8x taller to buy a few
+        // more terminal rows without cramping the digits horizontally.
         let tc = format_timecode(elapsed_ms);
-        let (cov, cw, ch) = rasterize_text(&self.font, &tc, 120.0);
+        let (mut cov, cw, ch) = rasterize_text(&self.font, &tc, 160.0);
+        dilate(&mut cov, cw, ch, 5);
+        sharpen(&mut cov);
         let dst_w = self.width * 88 / 100;
         let scale_x = dst_w as f32 / cw as f32;
-        let dst_h = (ch as f32 * scale_x * 2.6) as usize;
+        let dst_h = (ch as f32 * scale_x * 1.8) as usize;
         let tx = (self.width.saturating_sub(dst_w)) / 2;
         let ty = (self.height.saturating_sub(dst_h)) / 2;
-        // Drop shadow (offset, black) then the bright green digits.
-        let off = (scale_x * 3.0) as usize;
-        f.blit_coverage(&cov, cw, ch, tx + off, ty + off, dst_w, dst_h, [0, 0, 0]);
-        f.blit_coverage(&cov, cw, ch, tx, ty, dst_w, dst_h, [80, 255, 120]);
+        let pad = 14usize;
+        f.fill_rect(
+            tx.saturating_sub(pad),
+            ty.saturating_sub(pad),
+            dst_w + 2 * pad,
+            dst_h + 2 * pad,
+            [0, 0, 0],
+        );
+        f.blit_coverage(&cov, cw, ch, tx, ty, dst_w, dst_h, [255, 255, 255]);
 
         // Small label + frame counter, rendered 1:1 (no stretch) up top/bottom.
         let label = format!("VIROH {}x{} {}FPS", self.width, self.height, self.fps);
