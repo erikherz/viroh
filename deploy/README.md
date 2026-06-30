@@ -44,11 +44,16 @@ sudo systemctl daemon-reload && sudo systemctl enable --now iroh-relay
 ```
 
 Config: `deploy/iroh-relay.config.toml` (binds `:443` HTTPS with the Let's Encrypt
-cert, `:80` for plain HTTP services). Open **TCP/UDP 443** and **TCP 80**.
+cert, `:80` for plain HTTP services). Open **TCP/UDP 443** and **TCP 80** (443 is
+already open).
 
-> To make viroh clients *use* this relay you point them at
-> `RelayMode::Custom(https://server.viroh.net)` instead of the `N0` preset — a
-> `--relay-url` client flag is the planned hook for this.
+Clients use it with the `--relay-url` flag (implemented on all three binaries):
+
+```sh
+viroh-sender   --relay-url https://server.viroh.net --name studio-A
+viroh-receiver --relay-url https://server.viroh.net <node-id>
+viroh-fleet    --relay-url https://server.viroh.net   # forwarded to every agent
+```
 
 ## 3. Self-hosted DNS directory (optional, needs registrar changes)
 

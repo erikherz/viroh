@@ -48,6 +48,9 @@ struct Args {
     /// If set, API requests must present `Authorization: Bearer <token>`.
     #[arg(long, env = "VIROH_FLEET_TOKEN")]
     token: Option<String>,
+    /// Custom iroh relay URL passed to every agent (e.g. https://server.viroh.net).
+    #[arg(long)]
+    relay_url: Option<String>,
 }
 
 /// Per-agent runtime state, shared with the reader/monitor tasks.
@@ -108,6 +111,7 @@ struct Inner {
     next_id: AtomicU64,
     sender_bin: PathBuf,
     token: Option<String>,
+    relay_url: Option<String>,
 }
 
 #[tokio::main]
@@ -135,6 +139,7 @@ async fn main() -> Result<()> {
             next_id: AtomicU64::new(1),
             sender_bin,
             token: args.token,
+            relay_url: args.relay_url,
         }),
     };
 
@@ -291,8 +296,11 @@ fn spawn_agent(state: &AppState, id: u64, cfg: &AgentCfg) -> Result<Arc<Mutex<Ru
         .arg("--width")
         .arg(cfg.width.to_string())
         .arg("--height")
-        .arg(cfg.height.to_string())
-        .stdout(Stdio::piped())
+        .arg(cfg.height.to_string());
+    if let Some(url) = &state.inner.relay_url {
+        cmd.arg("--relay-url").arg(url);
+    }
+    cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 

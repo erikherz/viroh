@@ -114,7 +114,10 @@ over the relay as a fallback. Either way it's the same encrypted QUIC stream to
 your code.
 
 So the relay and the DNS directory are the two pieces of shared infrastructure.
-By default they're number 0's; below, you run your own.
+By default they're number 0's; below, you run your own — and a **live one is
+already running at `https://server.viroh.net`**. Point any binary at it with
+`--relay-url https://server.viroh.net` (sender, receiver, and fleet all accept it)
+to route through your own relay instead of n0's.
 
 ---
 
@@ -148,6 +151,7 @@ sniffs the node id, and kills it cleanly on stop/delete (and on fleet exit).
 --tls-key  <pem>
 --token <secret>     require Authorization: Bearer <secret> on /api/*
                      (also reads $VIROH_FLEET_TOKEN; the UI has a token field)
+--relay-url <url>    custom iroh relay forwarded to every launched agent
 ```
 
 **Production example (HTTPS + token), e.g. on server.viroh.net:**

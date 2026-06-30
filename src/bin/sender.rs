@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Parser;
-use iroh::{endpoint::presets, endpoint::Connection, Endpoint};
+use iroh::{endpoint::presets, endpoint::Connection, Endpoint, RelayMap, RelayMode};
 use tokio::time::sleep;
 
 use viroh::{video, video::TimecodeSource, write_frame, write_meta, StreamMeta, ALPN, FPS, HEIGHT, WIDTH};
@@ -16,6 +16,9 @@ struct Args {
     /// Agent name, sent to receivers in the stream metadata.
     #[arg(long, default_value = "viroh")]
     name: String,
+    /// Use a custom iroh relay (e.g. https://server.viroh.net) instead of n0's.
+    #[arg(long)]
+    relay_url: Option<String>,
     /// Frames per second.
     #[arg(long, default_value_t = FPS)]
     fps: u32,
@@ -41,10 +44,13 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let ep = Endpoint::builder(presets::N0)
-        .alpns(vec![ALPN.to_vec()])
-        .bind()
-        .await?;
+    let mut builder = Endpoint::builder(presets::N0).alpns(vec![ALPN.to_vec()]);
+    if let Some(url) = &args.relay_url {
+        let map = RelayMap::try_from_iter([url.as_str()])
+            .map_err(|e| anyhow::anyhow!("invalid --relay-url {url}: {e}"))?;
+        builder = builder.relay_mode(RelayMode::Custom(map));
+    }
+    let ep = builder.bind().await?;
 
     // Wait until we have a home relay so discovery can publish our address.
     ep.online().await;
@@ -71,6 +77,10 @@ async fn main() -> Result<()> {
     println!("  name   : {}", args.name);
     println!("  node id: {id}");
     println!("  source : {}x{} @ {}fps, jpeg q{}", args.width, args.height, args.fps, args.quality);
+    match &args.relay_url {
+        Some(url) => println!("  relay  : {url} (custom)"),
+        None => println!("  relay  : n0 default"),
+    }
     println!();
     println!("Start a receiver with:");
     println!("    viroh-receiver {id}");

@@ -13,7 +13,8 @@ ExecStart=/home/ubuntu/viroh/target/release/viroh-fleet \
   --bind 0.0.0.0:8443 \
   --sender-bin /home/ubuntu/viroh/target/release/viroh-sender \
   --tls-cert /etc/letsencrypt/live/server.viroh.net/fullchain.pem \
-  --tls-key /etc/letsencrypt/live/server.viroh.net/privkey.pem
+  --tls-key /etc/letsencrypt/live/server.viroh.net/privkey.pem \
+  --relay-url https://server.viroh.net
 # Set the API token here (or via systemctl edit). Generate one with:
 #   openssl rand -hex 16
 Environment=VIROH_FLEET_TOKEN=CHANGE_ME

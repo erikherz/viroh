@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use clap::Parser;
 use crossterm::{cursor, event, execute, terminal};
-use iroh::{endpoint::presets, Endpoint, EndpointId};
+use iroh::{endpoint::presets, Endpoint, EndpointId, RelayMap, RelayMode};
 
 use viroh::{read_frame, read_meta, render, video, ALPN};
 
@@ -17,6 +17,9 @@ use viroh::{read_frame, read_meta, render, video, ALPN};
 struct Args {
     /// The sender's node id (printed by viroh-sender on startup).
     node_id: String,
+    /// Use a custom iroh relay (e.g. https://server.viroh.net) instead of n0's.
+    #[arg(long)]
+    relay_url: Option<String>,
 }
 
 #[tokio::main]
@@ -24,7 +27,13 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let id = EndpointId::from_str(args.node_id.trim()).context("invalid node id")?;
 
-    let ep = Endpoint::bind(presets::N0).await?;
+    let mut builder = Endpoint::builder(presets::N0);
+    if let Some(url) = &args.relay_url {
+        let map = RelayMap::try_from_iter([url.as_str()])
+            .map_err(|e| anyhow::anyhow!("invalid --relay-url {url}: {e}"))?;
+        builder = builder.relay_mode(RelayMode::Custom(map));
+    }
+    let ep = builder.bind().await?;
     eprintln!("connecting to {id} ...");
     let conn = ep.connect(id, ALPN).await?;
     let mut recv = conn.accept_uni().await?;
