@@ -2,13 +2,13 @@
 
 Peer-to-peer **synthetic video over [iroh](https://www.iroh.computer)**, rendered
 as colored ASCII art in your terminal — plus a web app to run a **fleet** of
-video agents.
+video agents and **watch any of them as real video in a browser**.
 
 | binary | role |
 | --- | --- |
 | `viroh-sender` | synthesizes a 640×480 timecode signal, encodes Motion-JPEG, streams it over iroh |
-| `viroh-receiver <node-id>` | dials a sender by its iroh node id, decodes, renders truecolor ASCII |
-| `viroh-fleet` | web UI + JSON API to start/stop/monitor many sender agents on one host |
+| `viroh-receiver <node-id>` | dials a sender by its iroh node id, decodes, renders colored half-block ASCII |
+| `viroh-fleet` | web UI + JSON API to start/stop/monitor many sender agents on one host, plus a browser gateway (`/sources/<id>`) to watch any agent's real video |
 
 Everything is pure Rust — no C codec libraries, no ffmpeg.
 
@@ -62,15 +62,21 @@ on exit. Many receivers can watch one sender at once.
 - **Codec:** [`jpeg-encoder`](https://crates.io/crates/jpeg-encoder) (encode) +
   [`zune-jpeg`](https://crates.io/crates/zune-jpeg) (decode), both pure Rust. Each
   frame is an independent JPEG — i.e. Motion-JPEG.
-- **Synthetic source:** drawn in-process (`src/video.rs`) with an embedded 5×7
-  bitmap font (`src/font.rs`) — a running `HH:MM:SS.mmm` timecode, a moving sweep
-  bar, and a label. No input file or camera needed.
+- **Synthetic source:** drawn in-process (`src/video.rs`) — a running
+  `HH:MM:SS.mmm` timecode, a moving sweep bar, and a label. No input file or
+  camera needed. The timecode is rendered with an embedded anti-aliased font
+  ([`fontdue`](https://crates.io/crates/fontdue) + JetBrains Mono ExtraBold);
+  its strokes are dilated and edge-sharpened on a black panel so the digits stay
+  legible after the heavy downsample to terminal cells.
 - **Wire protocol** on the uni-stream:
   1. **One metadata message** — length-prefixed JSON `StreamMeta`:
      `{ name, started_at (RFC 3339), kind: "video only", width, height, fps }`.
   2. **Then video frames** — each `[u32 big-endian length][JPEG bytes]`.
-- **Renderer:** averages each source block to one cell, picks a character from a
-  brightness ramp, and colors it with a 24-bit ANSI escape, sized to your terminal.
+- **Renderer:** by default uses Unicode upper-half-block characters (`▀`) — each
+  cell carries two vertically-stacked pixels (foreground = top, background =
+  bottom), doubling vertical resolution. `--ascii` switches to a brightness-ramp
+  character set instead. Either way it's sized to your terminal and colored with
+  ANSI escapes (24-bit or 256-color).
 
 ### Preview the source without networking
 
@@ -127,7 +133,10 @@ A small [axum](https://crates.io/crates/axum) web app that manages `viroh-sender
 processes on the host it runs on.
 
 - **UI** at `/` — launch an agent (name, fps, quality, resolution), watch status,
-  copy a ready-to-paste `viroh-receiver <id>` command, tail logs, stop/start/delete.
+  tail logs, stop/start/delete. Each running agent's row offers a **watch ▶** link
+  (opens the browser player), **copy link** (the shareable `/sources/<id>` URL), a
+  **per-sender color** selector, and **copy cmd** (a ready-to-paste
+  `viroh-receiver <id>` with that color baked in).
 - **JSON API** under `/api`:
 
   | method + path | action |
@@ -141,6 +150,23 @@ processes on the host it runs on.
 
 Each agent is a child `viroh-sender`; the fleet captures its stdout/stderr,
 sniffs the node id, and kills it cleanly on stop/delete (and on fleet exit).
+
+### Watch in a browser (`/sources/<node-id>`)
+
+The fleet runs its own iroh client endpoint and **bridges a sender's stream to
+the browser** — no terminal, no transcoding. Since the wire format already is
+Motion-JPEG, the gateway just re-emits the frames as
+`multipart/x-mixed-replace`, which an `<img>` renders natively as live video.
+
+| method + path | action |
+| --- | --- |
+| `GET /sources/{node-id}` | player page (auto-reconnects if the sender drops) |
+| `GET /sources/{node-id}/stream` | the live MJPEG bridge the page's `<img>` consumes |
+
+These two routes are **public** (no token) by design: anyone with the URL can
+watch, matching iroh's "a node id is discoverable" model. The `/api/*` control
+plane stays token-gated. Each viewer is an independent iroh connection, so many
+browsers (and terminal receivers) can watch one sender at once.
 
 **Options**
 
@@ -221,8 +247,9 @@ deployment target.
 (default `auto`, which uses 24-bit when `$COLORTERM` advertises it, else 256-color).
 24-bit terminals (iTerm2, Ghostty, kitty, WezTerm, Windows Terminal) look best;
 **macOS Terminal has no 24-bit support and misrenders truecolor escapes**, so use
-`--color 256` (or leave it on `auto`) there. The fleet dashboard has a color picker
-that bakes the right `--color` flag into the "copy cmd" button.
+`--color 256` (or leave it on `auto`) there. The fleet dashboard has a per-sender
+color selector that bakes the right `--color` flag into that agent's "copy cmd".
+(The browser player at `/sources/<id>` is true RGB video and unaffected by this.)
 
 ## Next step: real capture
 
