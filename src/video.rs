@@ -179,7 +179,7 @@ fn dilate(cov: &mut [u8], w: usize, h: usize, r: usize) {
 /// restoring crisp edges. The box-average downsample re-introduces exactly the
 /// smoothing we need, so sharp source edges read better than soft ones.
 fn sharpen(cov: &mut [u8]) {
-    const K: f32 = 2.5;
+    const K: f32 = 4.5;
     for v in cov.iter_mut() {
         let n = (*v as f32 / 255.0 - 0.5) * K + 0.5;
         *v = (n.clamp(0.0, 1.0) * 255.0) as u8;
