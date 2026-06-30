@@ -24,6 +24,10 @@ struct Args {
     /// 256-color (correct on macOS Terminal, which lacks 24-bit support).
     #[arg(long, value_enum, default_value_t = ColorArg::Auto)]
     color: ColorArg,
+    /// Use the ASCII character ramp instead of half-block pixels. Half-blocks
+    /// (the default) have double the vertical resolution and read much better.
+    #[arg(long)]
+    ascii: bool,
 }
 
 #[derive(Copy, Clone, Debug, clap::ValueEnum)]
@@ -116,7 +120,12 @@ async fn main() -> Result<()> {
         }
         // Reserve the bottom row for a status line.
         let (gc, gr) = render::fit_grid(frame.width, frame.height, cols as usize, rows.saturating_sub(1) as usize);
-        let art = render::to_ascii(&frame, gc, gr, color_mode);
+        // Half-blocks need color; fall back to the ASCII ramp for --ascii or mono.
+        let art = if args.ascii || color_mode == ColorMode::Mono {
+            render::to_ascii(&frame, gc, gr, color_mode)
+        } else {
+            render::to_half_blocks(&frame, gc, gr, color_mode)
+        };
 
         // Update the rolling FPS estimate roughly twice a second.
         if fps_window_start.elapsed() >= Duration::from_millis(500) {

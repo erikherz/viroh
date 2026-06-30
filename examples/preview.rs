@@ -24,7 +24,11 @@ fn main() {
     for i in 0..frames {
         // Sample a few moments across one second.
         let frame = src.render((i as u128) * 1000 / frames.max(1) as u128);
-        let art = render::to_ascii(&frame, gc, gr, mode);
+        let art = if mode == ColorMode::Mono {
+            render::to_ascii(&frame, gc, gr, mode)
+        } else {
+            render::to_half_blocks(&frame, gc, gr, mode)
+        };
         // `to_ascii` ends each row with CRLF (for raw mode); LF is fine here too.
         print!("{art}");
         println!("\x1b[0m--- frame {i} ---\n");

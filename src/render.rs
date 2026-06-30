@@ -141,3 +141,73 @@ pub fn to_ascii(frame: &Frame, cols: usize, rows: usize, mode: ColorMode) -> Str
     }
     out
 }
+
+/// Average RGB of the source block `[x0,x1) x [y0,y1)` (bounds assumed valid).
+fn avg_block(frame: &Frame, x0: usize, x1: usize, y0: usize, y1: usize) -> (u8, u8, u8) {
+    let (mut r, mut g, mut b, mut n) = (0u64, 0u64, 0u64, 0u64);
+    for y in y0..y1 {
+        let row = y * frame.width;
+        for x in x0..x1 {
+            let i = (row + x) * 3;
+            r += frame.rgb[i] as u64;
+            g += frame.rgb[i + 1] as u64;
+            b += frame.rgb[i + 2] as u64;
+            n += 1;
+        }
+    }
+    let n = n.max(1);
+    ((r / n) as u8, (g / n) as u8, (b / n) as u8)
+}
+
+/// Renders `frame` using Unicode upper-half-block characters (`▀`).
+///
+/// Each cell encodes **two** vertical pixels — the foreground color is the top
+/// pixel, the background the bottom — which doubles vertical resolution versus
+/// [`to_ascii`] and draws solid color blocks instead of sparse characters. This
+/// is what makes fine detail (like the timecode) readable in a short terminal.
+/// `mode` must be `Truecolor` or `Ansi256` (color is required for half-blocks).
+pub fn to_half_blocks(frame: &Frame, cols: usize, rows: usize, mode: ColorMode) -> String {
+    let vrows = (rows * 2).max(1); // vertical samples: two per character row
+    let mut out = String::with_capacity(cols * rows * 28);
+    let band = |k: usize| -> (usize, usize) {
+        let a = k * frame.height / vrows;
+        let b = ((k + 1) * frame.height / vrows).max(a + 1).min(frame.height);
+        (a, b)
+    };
+
+    for cy in 0..rows {
+        let mut last: Option<(u32, u32)> = None;
+        let (ty0, ty1) = band(2 * cy);
+        let (by0, by1) = band(2 * cy + 1);
+        for cx in 0..cols {
+            let sx0 = cx * frame.width / cols;
+            let sx1 = ((cx + 1) * frame.width / cols).max(sx0 + 1).min(frame.width);
+            let (tr, tg, tb) = avg_block(frame, sx0, sx1, ty0, ty1);
+            let (br, bg, bb) = avg_block(frame, sx0, sx1, by0, by1);
+
+            match mode {
+                ColorMode::Ansi256 | ColorMode::Mono => {
+                    // Mono falls back to 256 here; the receiver routes true mono
+                    // to to_ascii, so this is only reached for Ansi256.
+                    let tn = rgb_to_ansi256(tr, tg, tb) as u32;
+                    let bn = rgb_to_ansi256(br, bg, bb) as u32;
+                    if last != Some((tn, bn)) {
+                        let _ = write!(out, "\x1b[38;5;{tn};48;5;{bn}m");
+                        last = Some((tn, bn));
+                    }
+                }
+                ColorMode::Truecolor => {
+                    let tk = (tr as u32) << 16 | (tg as u32) << 8 | tb as u32;
+                    let bk = (br as u32) << 16 | (bg as u32) << 8 | bb as u32;
+                    if last != Some((tk, bk)) {
+                        let _ = write!(out, "\x1b[38;2;{tr};{tg};{tb};48;2;{br};{bg};{bb}m");
+                        last = Some((tk, bk));
+                    }
+                }
+            }
+            out.push('▀');
+        }
+        out.push_str("\x1b[0m\r\n");
+    }
+    out
+}
