@@ -83,7 +83,7 @@ struct AgentCfg {
     height: usize,
 }
 fn default_fps() -> u32 { 30 }
-fn default_quality() -> u8 { 75 }
+fn default_quality() -> u8 { 90 }
 fn default_width() -> usize { 640 }
 fn default_height() -> usize { 480 }
 

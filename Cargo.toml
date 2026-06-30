@@ -11,6 +11,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 jpeg-encoder = "0.6"
 zune-jpeg = "0.4"
+fontdue = "0.9"
 crossterm = "0.28"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }

@@ -6,10 +6,12 @@
 //! pure-Rust JPEG codec, giving us a real Motion-JPEG stream over the wire.
 
 use anyhow::{anyhow, Result};
+use fontdue::Font;
 use jpeg_encoder::{ColorType, Encoder};
 use zune_jpeg::JpegDecoder;
 
-use crate::font;
+/// JetBrains Mono ExtraBold (SIL OFL 1.1), embedded for portable text rendering.
+const FONT_BYTES: &[u8] = include_bytes!("../assets/JetBrainsMono-ExtraBold.ttf");
 
 /// A 24-bit RGB frame (`rgb.len() == width * height * 3`).
 pub struct Frame {
@@ -50,39 +52,95 @@ impl Frame {
         }
     }
 
-    /// Draws `text` with the 5x7 font, scaled by `scale`, top-left at (x, y).
-    /// `weight` thickens each stroke by that many extra pixels so the glyphs
-    /// survive the heavy downsampling the ASCII renderer applies. Returns the x
-    /// coordinate just past the drawn text.
-    fn draw_text(
+    /// Alpha-composites a grayscale coverage bitmap (`cov`, `cw`x`ch`) into the
+    /// destination rectangle, box-averaging so it scales smoothly, tinted `color`.
+    fn blit_coverage(
         &mut self,
-        x: usize,
-        y: usize,
-        text: &str,
-        xscale: usize,
-        yscale: usize,
-        weight: usize,
-        c: [u8; 3],
-    ) -> usize {
-        let mut cx = x;
-        let advance = (font::GLYPH_W + 1) * xscale;
-        for ch in text.chars() {
-            if let Some(rows) = font::glyph(ch) {
-                for (ry, bits) in rows.iter().enumerate() {
-                    for col in 0..font::GLYPH_W {
-                        // bit 4 is the leftmost column
-                        if bits & (1 << (font::GLYPH_W - 1 - col)) != 0 {
-                            let px = cx + col * xscale;
-                            let py = y + ry * yscale;
-                            self.fill_rect(px, py, xscale + weight, yscale + weight, c);
-                        }
+        cov: &[u8],
+        cw: usize,
+        ch: usize,
+        dx: usize,
+        dy: usize,
+        dw: usize,
+        dh: usize,
+        color: [u8; 3],
+    ) {
+        if cw == 0 || ch == 0 || dw == 0 || dh == 0 {
+            return;
+        }
+        for j in 0..dh {
+            let py = dy + j;
+            if py >= self.height {
+                break;
+            }
+            let sy0 = j * ch / dh;
+            let sy1 = ((j + 1) * ch / dh).max(sy0 + 1).min(ch);
+            for i in 0..dw {
+                let px = dx + i;
+                if px >= self.width {
+                    break;
+                }
+                let sx0 = i * cw / dw;
+                let sx1 = ((i + 1) * cw / dw).max(sx0 + 1).min(cw);
+                let (mut sum, mut n) = (0u32, 0u32);
+                for sy in sy0..sy1 {
+                    let row = sy * cw;
+                    for sx in sx0..sx1 {
+                        sum += cov[row + sx] as u32;
+                        n += 1;
+                    }
+                }
+                let a = sum / n.max(1);
+                if a == 0 {
+                    continue;
+                }
+                let idx = (py * self.width + px) * 3;
+                for k in 0..3 {
+                    let e = self.rgb[idx + k] as u32;
+                    self.rgb[idx + k] = ((e * (255 - a) + color[k] as u32 * a) / 255) as u8;
+                }
+            }
+        }
+    }
+}
+
+/// Rasterizes `text` to a tightly-cropped grayscale coverage canvas at `px`
+/// pixels tall, laying glyphs out with the font's metrics. Returns
+/// `(coverage, width, height)`.
+fn rasterize_text(font: &Font, text: &str, px: f32) -> (Vec<u8>, usize, usize) {
+    let mut pen = 0f32;
+    let mut max_top = 0i32;
+    let mut min_bot = 0i32;
+    let mut glyphs = Vec::new();
+    for ch in text.chars() {
+        let (m, bmp) = font.rasterize(ch, px);
+        max_top = max_top.max(m.ymin + m.height as i32);
+        min_bot = min_bot.min(m.ymin);
+        glyphs.push((pen + m.xmin as f32, m, bmp));
+        pen += m.advance_width;
+    }
+    let width = pen.ceil().max(1.0) as usize;
+    let height = (max_top - min_bot).max(1) as usize;
+    let baseline = max_top;
+    let mut canvas = vec![0u8; width * height];
+    for (gx, m, bmp) in glyphs {
+        let ox = gx.round() as i32;
+        let oy = baseline - (m.ymin + m.height as i32);
+        for j in 0..m.height {
+            for i in 0..m.width {
+                let cx = ox + i as i32;
+                let cy = oy + j as i32;
+                if cx >= 0 && (cx as usize) < width && cy >= 0 && (cy as usize) < height {
+                    let v = bmp[j * m.width + i];
+                    let idx = cy as usize * width + cx as usize;
+                    if v > canvas[idx] {
+                        canvas[idx] = v;
                     }
                 }
             }
-            cx += advance;
         }
-        cx
     }
+    (canvas, width, height)
 }
 
 /// Generates synthetic timecode frames at a fixed resolution.
@@ -91,15 +149,19 @@ pub struct TimecodeSource {
     height: usize,
     frame_no: u64,
     fps: u32,
+    font: Font,
 }
 
 impl TimecodeSource {
     pub fn new(width: usize, height: usize, fps: u32) -> Self {
+        let font = Font::from_bytes(FONT_BYTES, fontdue::FontSettings::default())
+            .expect("embedded font is valid");
         TimecodeSource {
             width,
             height,
             frame_no: 0,
             fps,
+            font,
         }
     }
 
@@ -132,29 +194,31 @@ impl TimecodeSource {
         f.fill_rect(0, 0, 3, self.height, [80, 80, 80]);
         f.fill_rect(self.width - 3, 0, 3, self.height, [80, 80, 80]);
 
-        // Big centered timecode. The horizontal scale fits all 12 characters in
-        // ~85% of the width; the vertical scale is stretched ~2.6x taller, since
-        // terminals are far shorter than they are wide and the ASCII renderer
-        // squeezes the frame's height much harder than its width. Taller digits
-        // therefore land on many more terminal rows and read clearly.
+        // Big centered timecode, rendered with the anti-aliased font for smooth
+        // edges. We rasterize once at a comfortable size, then box-average it into
+        // a destination rect: ~88% of the width, stretched ~2.6x taller than its
+        // natural aspect. Terminals are far shorter than they are wide and the
+        // ASCII renderer squeezes the frame's height much harder than its width,
+        // so taller digits land on many more terminal rows and read clearly.
         let tc = format_timecode(elapsed_ms);
-        let glyph_adv = font::GLYPH_W + 1;
-        let xscale = ((self.width * 85 / 100) / (tc.chars().count() * glyph_adv)).max(1);
-        let yscale = (xscale * 13 / 5).max(1); // ~2.6x taller
-        let weight = xscale / 2;
-        let text_w = tc.chars().count() * glyph_adv * xscale;
-        let text_h = font::GLYPH_H * yscale;
-        let tx = (self.width.saturating_sub(text_w)) / 2;
-        let ty = (self.height.saturating_sub(text_h)) / 2;
-        // drop shadow then bright text
-        f.draw_text(tx + xscale / 3, ty + yscale / 3, &tc, xscale, yscale, weight, [0, 0, 0]);
-        f.draw_text(tx, ty, &tc, xscale, yscale, weight, [80, 255, 120]);
+        let (cov, cw, ch) = rasterize_text(&self.font, &tc, 120.0);
+        let dst_w = self.width * 88 / 100;
+        let scale_x = dst_w as f32 / cw as f32;
+        let dst_h = (ch as f32 * scale_x * 2.6) as usize;
+        let tx = (self.width.saturating_sub(dst_w)) / 2;
+        let ty = (self.height.saturating_sub(dst_h)) / 2;
+        // Drop shadow (offset, black) then the bright green digits.
+        let off = (scale_x * 3.0) as usize;
+        f.blit_coverage(&cov, cw, ch, tx + off, ty + off, dst_w, dst_h, [0, 0, 0]);
+        f.blit_coverage(&cov, cw, ch, tx, ty, dst_w, dst_h, [80, 255, 120]);
 
-        // Small label + frame counter.
-        let label = format!("VIROH {}X{} {}FPS", self.width, self.height, self.fps);
-        f.draw_text(16, 16, &label, 3, 3, 1, [200, 200, 80]);
+        // Small label + frame counter, rendered 1:1 (no stretch) up top/bottom.
+        let label = format!("VIROH {}x{} {}FPS", self.width, self.height, self.fps);
+        let (lc, lcw, lch) = rasterize_text(&self.font, &label, 22.0);
+        f.blit_coverage(&lc, lcw, lch, 16, 16, lcw, lch, [200, 200, 80]);
         let counter = format!("FRAME {}", self.frame_no);
-        f.draw_text(16, self.height - 16 - font::GLYPH_H * 3, &counter, 3, 3, 1, [180, 180, 180]);
+        let (cc, ccw, cch) = rasterize_text(&self.font, &counter, 22.0);
+        f.blit_coverage(&cc, ccw, cch, 16, self.height - 16 - cch, ccw, cch, [180, 180, 180]);
 
         self.frame_no += 1;
         f

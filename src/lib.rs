@@ -1,6 +1,5 @@
 //! Shared pieces for the `viroh` synthetic-video sender and ASCII receiver.
 
-pub mod font;
 pub mod render;
 pub mod video;
 

@@ -23,7 +23,7 @@ struct Args {
     #[arg(long, default_value_t = FPS)]
     fps: u32,
     /// JPEG quality (1-100).
-    #[arg(long, default_value_t = 75)]
+    #[arg(long, default_value_t = 90)]
     quality: u8,
     /// Frame width in pixels.
     #[arg(long, default_value_t = WIDTH)]
