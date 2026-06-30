@@ -10,7 +10,7 @@ use clap::Parser;
 use crossterm::{cursor, event, execute, terminal};
 use iroh::{endpoint::presets, Endpoint, EndpointId, RelayMap, RelayMode};
 
-use viroh::{read_frame, read_meta, render, video, ALPN};
+use viroh::{read_frame, read_meta, render, render::ColorMode, video, ALPN};
 
 #[derive(Parser, Debug)]
 #[command(about = "Render a viroh sender's video as terminal ASCII art")]
@@ -20,11 +20,44 @@ struct Args {
     /// Use a custom iroh relay (e.g. https://server.viroh.net) instead of n0's.
     #[arg(long)]
     relay_url: Option<String>,
+    /// Color output mode. `auto` uses 24-bit if $COLORTERM advertises it, else
+    /// 256-color (correct on macOS Terminal, which lacks 24-bit support).
+    #[arg(long, value_enum, default_value_t = ColorArg::Auto)]
+    color: ColorArg,
+}
+
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
+enum ColorArg {
+    /// Detect from $COLORTERM; fall back to 256-color.
+    Auto,
+    /// 24-bit truecolor (iTerm2, Ghostty, kitty, WezTerm).
+    Truecolor,
+    /// 256-color palette (works in macOS Terminal).
+    #[value(name = "256")]
+    C256,
+    /// No color, characters only (works anywhere).
+    Mono,
+}
+
+impl ColorArg {
+    /// Resolves `Auto` against the environment into a concrete render mode.
+    fn resolve(self) -> ColorMode {
+        match self {
+            ColorArg::Truecolor => ColorMode::Truecolor,
+            ColorArg::C256 => ColorMode::Ansi256,
+            ColorArg::Mono => ColorMode::Mono,
+            ColorArg::Auto => match std::env::var("COLORTERM").as_deref() {
+                Ok("truecolor") | Ok("24bit") => ColorMode::Truecolor,
+                _ => ColorMode::Ansi256,
+            },
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    let color_mode = args.color.resolve();
     let id = EndpointId::from_str(args.node_id.trim()).context("invalid node id")?;
 
     let mut builder = Endpoint::builder(presets::N0);
@@ -83,7 +116,7 @@ async fn main() -> Result<()> {
         }
         // Reserve the bottom row for a status line.
         let (gc, gr) = render::fit_grid(frame.width, frame.height, cols as usize, rows.saturating_sub(1) as usize);
-        let art = render::to_ascii(&frame, gc, gr);
+        let art = render::to_ascii(&frame, gc, gr, color_mode);
 
         // Update the rolling FPS estimate roughly twice a second.
         if fps_window_start.elapsed() >= Duration::from_millis(500) {

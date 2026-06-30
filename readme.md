@@ -215,8 +215,14 @@ performs the metadata handshake, streams three frames, and verifies they decode.
 
 Pure Rust + [`crossterm`](https://crates.io/crates/crossterm), so the same code
 targets **Linux, macOS, and Windows**. Developed on macOS; Linux is the primary
-deployment target. Use a 24-bit-color terminal for the truecolor picture (most
-modern terminals; Windows Terminal on Windows).
+deployment target.
+
+**Color:** the receiver picks a color mode with `--color auto|truecolor|256|mono`
+(default `auto`, which uses 24-bit when `$COLORTERM` advertises it, else 256-color).
+24-bit terminals (iTerm2, Ghostty, kitty, WezTerm, Windows Terminal) look best;
+**macOS Terminal has no 24-bit support and misrenders truecolor escapes**, so use
+`--color 256` (or leave it on `auto`) there. The fleet dashboard has a color picker
+that bakes the right `--color` flag into the "copy cmd" button.
 
 ## Next step: real capture
 

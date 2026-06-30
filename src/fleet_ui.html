@@ -47,6 +47,13 @@
   <h1>◧ viroh fleet</h1>
   <span class="stamp" id="count">—</span>
   <span style="flex:1"></span>
+  <label for="color">receiver color</label>
+  <select id="color" title="Color mode baked into the copied viroh-receiver command">
+    <option value="auto">auto</option>
+    <option value="256">256-color (macOS Terminal)</option>
+    <option value="truecolor">truecolor (iTerm2/Ghostty)</option>
+    <option value="mono">mono</option>
+  </select>
   <label for="token">token</label>
   <input id="token" type="password" placeholder="(optional)" style="width:200px" />
 </header>
@@ -79,6 +86,9 @@ const $ = (id) => document.getElementById(id);
 const tokenEl = $("token");
 tokenEl.value = localStorage.getItem("viroh_token") || "";
 tokenEl.addEventListener("change", () => localStorage.setItem("viroh_token", tokenEl.value));
+const colorEl = $("color");
+colorEl.value = localStorage.getItem("viroh_color") || "auto";
+colorEl.addEventListener("change", () => localStorage.setItem("viroh_color", colorEl.value));
 
 function headers(json) {
   const h = {};
@@ -110,7 +120,11 @@ async function act(id, what) {
     await refresh();
   } catch (e) { alert(e.message); }
 }
-function copyNid(nid) { navigator.clipboard.writeText("viroh-receiver " + nid); }
+function copyNid(nid) {
+  const c = $("color").value;
+  const flag = c && c !== "auto" ? "--color " + c + " " : "";
+  navigator.clipboard.writeText("viroh-receiver " + flag + nid);
+}
 
 function render(agents) {
   $("count").textContent = agents.length + " agent" + (agents.length === 1 ? "" : "s");
